@@ -92,6 +92,45 @@ ARTEX 는 **자신이 소유하거나 서면으로 명시적 허가를 받은 �
 
 ---
 
+## 로컬 VM에서 한 번에 빌드·실행
+
+Linux VM(amd64 또는 arm64)에 이 저장소를 복사한 뒤 아래 명령을 실행합니다. VM에는 **Docker Engine과 Docker Compose 플러그인 v2.20 이상**만 있으면 됩니다. Go·Node·Python과 실행 도구는 이미지 안에 설치됩니다. 처음 빌드할 때 이미지와 패키지를 받으므로 인터넷 연결이 필요합니다. VM 자원은 4 vCPU·8 GB RAM·여유 디스크 20 GB부터 시작하는 것을 권장합니다.
+
+```bash
+git clone https://github.com/KimDaehyeon6873/artex-ko.git
+cd artex-ko
+bash local-vm.sh
+```
+
+Docker가 없다면 VM 배포판에 맞는 [Docker Engine 설치 안내](https://docs.docker.com/engine/install/)에 따라 Engine과 Compose 플러그인을 먼저 설치하고, `docker info`와 `docker compose version`이 동작하는 계정으로 실행하십시오.
+
+[`local-vm.sh`](local-vm.sh)는 **현재 소스의 정적 UI 빌드 → Go 바이너리 컴파일 → PostgreSQL 기동 → ARTEX 기동 → 상태 확인**을 처리합니다. 상류 `autumn27/artex` 이미지는 사용하지 않습니다. 관리자 UI와 기록 프록시는 VM의 `127.0.0.1:8787`·`127.0.0.1:8788`에만 열리고, DB는 컨테이너 내부 네트워크에서만 접근할 수 있습니다. ARTEX는 컨테이너 안에서 일반 사용자로 실행합니다.
+
+VM 밖의 PC에서 UI를 열려면 그 PC에서 SSH 터널을 연결합니다.
+
+```bash
+ssh -N -L 8787:127.0.0.1:8787 <VM사용자>@<VM주소>
+# PC 브라우저에서 http://127.0.0.1:8787 접속
+```
+
+첫 접속의 `/setup`에서 관리자 비밀번호를 정하고 LLM 설정에 API 키를 입력하십시오. 로그인 사용자 이름은 `ARTEX`입니다. **점검 작업은 자동 생성하지 않습니다.** 승인된 서비스의 URL·허용 범위를 지정하고, 권한 설정을 `ask`, 승인 시간 초과를 `deny`로 맞춘 뒤 작업을 생성하십시오. 작업 생성 즉시 실행되므로 처음에는 worker 1개와 짧은 실행 시간으로 시작하십시오.
+
+```bash
+bash local-vm.sh build     # 빌드만 수행
+bash local-vm.sh start     # 기존 이미지로 다시 기동
+bash local-vm.sh status    # 상태 확인
+bash local-vm.sh logs      # 로그 확인 (Ctrl-C로 종료)
+bash local-vm.sh stop      # 중지
+bash local-vm.sh down      # 컨테이너/네트워크 제거, 데이터 보존
+bash local-vm.sh           # 소스 변경 후 재빌드·기동
+```
+
+DB 비밀번호는 첫 실행에 `.local-vm/compose.env`에 무작위로 생성하고 권한을 `600`으로 제한합니다. 이 파일과 기존 `config.json`·`.env`는 재실행 때 덮어쓰지 않습니다. 포트가 겹치면 생성된 파일의 `ARTEX_VM_HTTP_PORT`·`ARTEX_VM_PROXY_PORT`만 바꾸고 다시 실행하십시오. **DB 생성 후 비밀번호 값을 임의로 바꾸면 기존 DB에 연결할 수 없습니다.** 이 파일은 DB 백업과 함께 보관하십시오. 같은 VM에서 이 워크플로는 `artex-local-vm`이라는 Compose 프로젝트 한 개를 관리합니다.
+
+DB·작업/증거 파일·JWT 로그인 키·스킬·사용자 홈은 각각 Docker 볼륨에 보존됩니다. `stop`, `down`, 재빌드는 볼륨을 지우지 않습니다. 최초 `up`은 DB·키·데이터를 새로 만들며, 기존 네이티브 설치나 `docker-compose.yml`의 데이터를 자동 이관하지 않습니다. 읽기 전용 이미지의 프로그램을 갱신할 때는 UI의 원클릭 업데이트 대신 `bash local-vm.sh`로 다시 빌드하십시오. 스킬 볼륨은 첫 실행의 기본 스킬과 이후 편집을 유지하므로, 소스에서 바뀐 스킬은 재빌드만으로 덮어쓰지 않습니다.
+
+컨테이너의 `localhost`는 ARTEX 컨테이너 자신입니다. VM 호스트의 테스트 서비스는 `host.docker.internal:<포트>`로 지정하되, 그 서비스가 Docker 브리지에서 접근 가능한 주소에 수신해야 합니다. 다른 VM/사내 서비스는 VM에서 접근 가능한 승인된 주소를 사용하십시오. 기본 이미지에는 Python·Node·curl·nmap 등이 들어 있습니다. Playwright/Chromium은 포함하지 않으므로 브라우저 도구가 필요하면 [`Dockerfile.local-vm`](Dockerfile.local-vm)을 확장하십시오.
+
 ## 빠른 시작 (Docker Compose)
 
 > **사전 요구:** Docker 와 Docker Compose. 데이터베이스는 **PostgreSQL** 이며 compose 가 함께 띄웁니다. 탐색에는 **LLM** 이 필요합니다(`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`, UI 에서도 설정 가능).

@@ -11,6 +11,19 @@ permissions:
   contents: read
 
 jobs:
+  local-vm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: VM 설치 스크립트 문법과 재실행/실패 흐름
+        run: |
+          bash -n local-vm.sh
+          python3 -I scripts/test-local-vm.py
+      - name: VM Compose 설정 검증 (데몬/실제 비밀번호 불필요)
+        env:
+          ARTEX_VM_DB_PASSWORD: validation-placeholder
+        run: docker compose -f compose.local-vm.yaml config --quiet
+
   # 빌드·정적 분석·테스트를 데이터베이스 없이 돌린다. 기여자가 저장소를 clone 한 뒤
   # PostgreSQL 없이 `go test ./...` 를 돌리는 환경을 그대로 재현한다. 데이터베이스가
   # 있어야 하는 통합 테스트는 이 환경에서 t.Skipf 로 건너뛰므로(스킵은 통과로 집계된다),
